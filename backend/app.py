@@ -7,6 +7,8 @@ import azure.cognitiveservices.speech as speechsdk
 import json
 import uuid
 from datetime import datetime
+import sqlite3
+import time
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -32,19 +34,122 @@ client = AzureOpenAI(
 
 # Initialize Flask app
 app = Flask(__name__, static_folder='../frontend', template_folder='../frontend')
-app.secret_key = os.getenv("FLASK_SECRET_KEY", os.urandom(24))  # Pour sécuriser les sessions
+app.secret_key = os.getenv("FLASK_SECRET_KEY", os.urandom(24))
 
-# Dictionary to store conversation history for users who aren't using cookies
-conversation_store = {}
+# Database setup
+DB_PATH = "conversations.db"
+
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    # Create users table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
+    
+    # Create conversations table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS conversations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT,
+        message TEXT,
+        role TEXT,
+        timestamp TIMESTAMP,
+        message_id TEXT UNIQUE,
+        feedback INTEGER DEFAULT 0,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+    ''')
+    
+    conn.commit()
+    conn.close()
+
+init_db()
+
+# Helper functions for database operations
+def get_or_create_user(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT id FROM users WHERE id = ?", (user_id,))
+    user = cursor.fetchone()
+    
+    if not user:
+        cursor.execute("INSERT INTO users (id) VALUES (?)", (user_id,))
+        conn.commit()
+    
+    conn.close()
+    return user_id
+
+def save_message(user_id, message, role, message_id=None):
+    if not message_id:
+        message_id = str(uuid.uuid4())
+        
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    timestamp = datetime.now().isoformat()
+    
+    cursor.execute(
+        "INSERT INTO conversations (user_id, message, role, timestamp, message_id) VALUES (?, ?, ?, ?, ?)",
+        (user_id, message, role, timestamp, message_id)
+    )
+    
+    conn.commit()
+    conn.close()
+    
+    return message_id
+
+def get_conversation_history(user_id, limit=20):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    cursor.execute(
+        "SELECT message, role, timestamp, message_id, feedback FROM conversations WHERE user_id = ? ORDER BY timestamp ASC LIMIT ?",
+        (user_id, limit)
+    )
+    
+    history = []
+    for msg, role, timestamp, message_id, feedback in cursor.fetchall():
+        history.append({
+            "role": role,
+            "content": msg,
+            "timestamp": timestamp,
+            "message_id": message_id,
+            "feedback": feedback
+        })
+    
+    conn.close()
+    return history
+
+def update_feedback(message_id, feedback):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    cursor.execute(
+        "UPDATE conversations SET feedback = ? WHERE message_id = ?",
+        (feedback, message_id)
+    )
+    
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    
+    return updated
 
 @app.route('/')
 def index():
     # Generate a session ID if one doesn't exist
     if 'user_id' not in session:
         session['user_id'] = str(uuid.uuid4())
-        # Initialize an empty conversation history for this user
-        if session['user_id'] not in conversation_store:
-            conversation_store[session['user_id']] = []
+        get_or_create_user(session['user_id'])
+    else:
+        get_or_create_user(session['user_id'])
+        
     return render_template('index.html')
 
 @app.route('/process-input', methods=['POST'])
@@ -59,12 +164,18 @@ def process_input():
         user_id = session.get('user_id', str(uuid.uuid4()))
         if 'user_id' not in session:
             session['user_id'] = user_id
+            get_or_create_user(user_id)
         
-        # Initialize conversation history if it doesn't exist
-        if user_id not in conversation_store:
-            conversation_store[user_id] = []
+        # Save user message to database
+        user_message_id = save_message(user_id, user_input, "user")
         
-        # Build chat prompt with conversation history
+        # Get conversation history from database
+        history = get_conversation_history(user_id)
+        
+        # Build chat messages for API
+        chat_messages = [msg for msg in history if msg["role"] in ["user", "assistant"]]
+        
+        # Prepare system message
         system_prompt = {
             "role": "system",
             "content": "You are an AI assistant who helps users find information. "
@@ -74,13 +185,16 @@ def process_input():
                        "so that someone can assist them."
         }
         
-        # Create full chat history with system prompt and user conversation history
-        chat_prompt = [system_prompt] + conversation_store[user_id] + [{"role": "user", "content": user_input}]
+        # Create API message format
+        api_messages = [system_prompt] + [
+            {"role": msg["role"], "content": msg["content"]} 
+            for msg in chat_messages
+        ] + [{"role": "user", "content": user_input}]
         
         # Generate completion
         completion = client.chat.completions.create(
             model=deployment,
-            messages=chat_prompt,
+            messages=api_messages,
             max_tokens=800,
             temperature=0.7,
             top_p=0.95,
@@ -118,44 +232,78 @@ def process_input():
         # Extract the assistant's response
         assistant_response = completion.choices[0].message.content
         
-        # Update conversation history
-        conversation_store[user_id].append({"role": "user", "content": user_input})
-        conversation_store[user_id].append({"role": "assistant", "content": assistant_response})
+        # Save assistant message to database
+        assistant_message_id = save_message(user_id, assistant_response, "assistant")
         
-        # Keep conversation history to a reasonable length (e.g., last 10 exchanges)
-        if len(conversation_store[user_id]) > 20:  # 10 exchanges (user + assistant)
-            conversation_store[user_id] = conversation_store[user_id][-20:]
-        
-        # Return the response
+        # Return the response with message IDs for feedback
         return jsonify({
             "response": assistant_response,
-            "session_id": user_id
+            "user_message_id": user_message_id,
+            "assistant_message_id": assistant_message_id
         })
 
     except Exception as e:
         logging.error(f"Error processing input: {e}")
         return jsonify({"error": "Could not process your request."}), 500
 
+@app.route('/feedback', methods=['POST'])
+def feedback():
+    try:
+        data = request.json
+        message_id = data.get('message_id')
+        feedback_value = data.get('feedback')  # 1 for like, -1 for dislike
+        
+        if not message_id or feedback_value not in [1, -1, 0]:
+            return jsonify({"error": "Invalid feedback data"}), 400
+            
+        updated = update_feedback(message_id, feedback_value)
+        
+        if updated:
+            return jsonify({"status": "success", "message": "Feedback recorded"})
+        else:
+            return jsonify({"error": "Message not found"}), 404
+            
+    except Exception as e:
+        logging.error(f"Error processing feedback: {e}")
+        return jsonify({"error": "Could not process feedback"}), 500
+
 @app.route('/clear-session', methods=['POST'])
 def clear_session():
-    user_id = session.get('user_id')
-    if user_id and user_id in conversation_store:
-        conversation_store[user_id] = []
-    return jsonify({"status": "success", "message": "Conversation history cleared"})
+    try:
+        user_id = session.get('user_id')
+        if not user_id:
+            return jsonify({"error": "No active session"}), 400
+            
+        # Delete all messages for this user
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM conversations WHERE user_id = ?", (user_id,))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({"status": "success", "message": "Conversation history cleared"})
+        
+    except Exception as e:
+        logging.error(f"Error clearing session: {e}")
+        return jsonify({"error": "Could not clear session"}), 500
 
-# Optional: Periodic cleanup of old sessions
-@app.before_request
-def cleanup_old_sessions():
-    # This is a simple example, in production you might want to use a scheduled task
-    to_delete = []
-    for user_id in list(conversation_store.keys()):
-        # If session is over 24 hours old or exceeds certain size, mark for deletion
-        # You would need to store timestamps with sessions for this logic
-        if len(conversation_store[user_id]) > 100:  # Example condition
-            to_delete.append(user_id)
-    
-    for user_id in to_delete:
-        del conversation_store[user_id]
+@app.route('/get-history', methods=['GET'])
+def get_history():
+    try:
+        user_id = session.get('user_id')
+        if not user_id:
+            return jsonify({"error": "No active session"}), 400
+            
+        history = get_conversation_history(user_id, limit=100)
+        
+        return jsonify({
+            "status": "success", 
+            "history": history
+        })
+        
+    except Exception as e:
+        logging.error(f"Error getting history: {e}")
+        return jsonify({"error": "Could not retrieve history"}), 500
 
 # Run the Flask app
 if __name__ == '__main__':

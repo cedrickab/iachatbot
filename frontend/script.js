@@ -12,25 +12,72 @@ document.addEventListener('DOMContentLoaded', () => {
     clearBtn.classList.add('clear-btn');
     document.querySelector('.input-container').appendChild(clearBtn);
 
-    // Load chat history from local storage if available
+    // Function to handle feedback clicks
+    function handleFeedback(messageId, value) {
+        // Send feedback to server
+        fetch('/feedback', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                message_id: messageId,
+                feedback: value
+            }),
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                console.log('Feedback recorded successfully');
+            } else {
+                console.error('Failed to record feedback:', data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error sending feedback:', error);
+        });
+    }
+
+    // Load chat history from the server
     function loadChatHistory() {
-        const savedMessages = localStorage.getItem('chatHistory');
-        if (savedMessages) {
-            const messages = JSON.parse(savedMessages);
-            messages.forEach(msg => {
-                addMessage(msg.role, msg.text, msg.timestamp, false);
+        fetch('/get-history')
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    chatWindow.innerHTML = ''; // Clear existing messages
+                    
+                    data.history.forEach(msg => {
+                        addMessage(
+                            msg.role, 
+                            msg.content, 
+                            new Date(msg.timestamp).toLocaleTimeString(),
+                            false,
+                            msg.message_id,
+                            msg.feedback
+                        );
+                    });
+                    
+                    chatWindow.scrollTop = chatWindow.scrollHeight;
+                } else {
+                    console.error('Failed to load history:', data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error loading history:', error);
             });
-            chatWindow.scrollTop = chatWindow.scrollHeight;
-        }
     }
 
     // Try to load history when page loads
     loadChatHistory();
 
     // Add a message to the chat window
-    function addMessage(role, text, timestamp = null, save = true) {
+    function addMessage(role, text, timestamp = null, save = true, messageId = null, feedback = 0) {
         const messageDiv = document.createElement('div');
         messageDiv.classList.add('message', role);
+        
+        if (messageId) {
+            messageDiv.dataset.messageId = messageId;
+        }
 
         const bubbleDiv = document.createElement('div');
         bubbleDiv.classList.add('message-bubble');
@@ -45,36 +92,75 @@ document.addEventListener('DOMContentLoaded', () => {
 
         messageDiv.appendChild(bubbleDiv);
         messageDiv.appendChild(timestampDiv);
+        
+        // Add feedback buttons for assistant messages only
+        if (role === 'assistant' && messageId) {
+            const feedbackDiv = document.createElement('div');
+            feedbackDiv.classList.add('feedback-buttons');
+            
+            const likeBtn = document.createElement('button');
+            likeBtn.classList.add('feedback-btn', 'like-btn');
+            likeBtn.innerHTML = '👍';
+            likeBtn.title = 'Like this response';
+            
+            const dislikeBtn = document.createElement('button');
+            dislikeBtn.classList.add('feedback-btn', 'dislike-btn');
+            dislikeBtn.innerHTML = '👎';
+            dislikeBtn.title = 'Dislike this response';
+            
+            // Set active state based on existing feedback
+            if (feedback === 1) {
+                likeBtn.classList.add('active');
+            } else if (feedback === -1) {
+                dislikeBtn.classList.add('active');
+            }
+            
+            // Add event listeners
+            likeBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                
+                // Toggle active state
+                const isActive = likeBtn.classList.contains('active');
+                const newValue = isActive ? 0 : 1;
+                
+                // Reset both buttons
+                likeBtn.classList.remove('active');
+                dislikeBtn.classList.remove('active');
+                
+                // Set new state if not removing
+                if (newValue !== 0) {
+                    likeBtn.classList.add('active');
+                }
+                
+                handleFeedback(messageId, newValue);
+            });
+            
+            dislikeBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                
+                // Toggle active state
+                const isActive = dislikeBtn.classList.contains('active');
+                const newValue = isActive ? 0 : -1;
+                
+                // Reset both buttons
+                likeBtn.classList.remove('active');
+                dislikeBtn.classList.remove('active');
+                
+                // Set new state if not removing
+                if (newValue !== 0) {
+                    dislikeBtn.classList.add('active');
+                }
+                
+                handleFeedback(messageId, newValue);
+            });
+            
+            feedbackDiv.appendChild(likeBtn);
+            feedbackDiv.appendChild(dislikeBtn);
+            messageDiv.appendChild(feedbackDiv);
+        }
+        
         chatWindow.appendChild(messageDiv);
         chatWindow.scrollTop = chatWindow.scrollHeight; // Scroll to the bottom
-        
-        // Save to local storage if needed
-        if (save) {
-            saveMessage(role, text, messageTime);
-        }
-    }
-    
-    // Save message to local storage
-    function saveMessage(role, text, timestamp) {
-        let messages = [];
-        const savedMessages = localStorage.getItem('chatHistory');
-        
-        if (savedMessages) {
-            messages = JSON.parse(savedMessages);
-        }
-        
-        messages.push({
-            role: role,
-            text: text,
-            timestamp: timestamp
-        });
-        
-        // Limit stored history to prevent localStorage exceeding limits
-        if (messages.length > 50) {
-            messages = messages.slice(-50);
-        }
-        
-        localStorage.setItem('chatHistory', JSON.stringify(messages));
     }
 
     // Handle the "Send" button click
@@ -92,7 +178,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Display "Processing..." message
         const processingTimestamp = new Date().toLocaleTimeString();
-        addMessage('assistant', 'Processing...', processingTimestamp, false);
+        const processingId = 'processing-' + Date.now();
+        addMessage('assistant', 'Processing...', processingTimestamp, false, processingId);
 
         // Disable the submit button
         submitBtn.disabled = true;
@@ -113,21 +200,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const data = await response.json();
 
-            // Replace "Processing..." with the actual response
-            const processingMessage = chatWindow.lastChild;
-            processingMessage.querySelector('.message-bubble').textContent = data.response;
+            // Find the processing message and remove it
+            const processingMessage = document.querySelector(`[data-message-id="${processingId}"]`);
+            if (processingMessage) {
+                processingMessage.remove();
+            }
             
-            // Save the actual message
-            saveMessage('assistant', data.response, processingTimestamp);
+            // Add the actual response with message ID for feedback
+            addMessage('assistant', data.response, processingTimestamp, true, data.assistant_message_id);
             
         } catch (error) {
             console.error('Error:', error);
-            const processingMessage = chatWindow.lastChild;
-            processingMessage.querySelector('.message-bubble').textContent = 'Error: Could not process your request.';
-            processingMessage.classList.add('error');
             
-            // Save the error message
-            saveMessage('assistant', 'Error: Could not process your request.', processingTimestamp);
+            // Find the processing message
+            const processingMessage = document.querySelector(`[data-message-id="${processingId}"]`);
+            if (processingMessage) {
+                // Update the processing message with error
+                const bubbleDiv = processingMessage.querySelector('.message-bubble');
+                if (bubbleDiv) {
+                    bubbleDiv.textContent = 'Error: Could not process your request.';
+                    processingMessage.classList.add('error');
+                }
+            }
         } finally {
             // Re-enable the submit button
             submitBtn.disabled = false;
@@ -150,7 +244,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-        recognition.lang = 'fr-FR'; // Changed to French since the audio test uses French
+        recognition.lang = 'fr-FR'; // Set to French as your app seems to be in French
 
         // Change icon and add recording class when recognition starts
         recognition.onstart = () => {
@@ -185,13 +279,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Handle clear button click
     clearBtn.addEventListener('click', async () => {
         if (confirm('Are you sure you want to clear this conversation?')) {
-            // Clear the local storage
-            localStorage.removeItem('chatHistory');
-            
-            // Clear the chat window
-            chatWindow.innerHTML = '';
-            
-            // Send request to clear server-side session
             try {
                 const response = await fetch('/clear-session', {
                     method: 'POST',
@@ -202,9 +289,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 if (!response.ok) {
                     console.error('Failed to clear server session');
+                    alert('Failed to clear conversation history.');
+                    return;
                 }
+                
+                // Clear the chat window
+                chatWindow.innerHTML = '';
+                
             } catch (error) {
                 console.error('Error clearing session:', error);
+                alert('Failed to clear conversation history.');
             }
         }
     });
