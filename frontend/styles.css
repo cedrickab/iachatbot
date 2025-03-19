@@ -72,7 +72,7 @@ h1 {
   border-radius: 5px;
 }
 
-#mic-btn, #submit-btn {
+#mic-btn, #submit-btn, #clear-btn {
   padding: 10px;
   border: none;
   border-radius: 5px;
@@ -84,6 +84,10 @@ h1 {
   justify-content: center;
 }
 
+#clear-btn {
+  background: #dc3545;
+}
+
 #mic-btn.recording {
   background: #dc3545;
   animation: pulse 1s infinite;
@@ -93,4 +97,10 @@ h1 {
   0% { transform: scale(1); }
   50% { transform: scale(1.1); }
   100% { transform: scale(1); }
+}
+
+.error .message-bubble {
+  background: #ffebee;
+  color: #d32f2f;
+  border: 1px solid #ffcdd2;
 }
