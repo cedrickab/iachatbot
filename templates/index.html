@@ -1,22 +1,42 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chatbot</title>
+    <title>AI Assistant</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
     <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 </head>
 <body>
     <div class="container">
-        <h1>Chatbot</h1>
+        <div class="header">
+            <h1>AI Assistant</h1>
+            <div class="header-actions">
+                <button id="clear-btn" title="Clear conversation">
+                    <i class="fas fa-trash-alt"></i>
+                </button>
+            </div>
+        </div>
         <div id="chat-window">
-            <!-- Chat messages will be displayed here -->
+            <!-- Default welcome message -->
+            <div class="message assistant">
+                <div class="message-bubble">
+                    Hello! How can I assist you today? Ask me anything.
+                </div>
+                <div class="message-info">
+                    <div class="timestamp">Now</div>
+                </div>
+            </div>
         </div>
         <div class="input-container">
-            <input type="text" id="input-field" placeholder="Type or speak your message...">
-            <button id="mic-btn">🎤</button>
-            <button id="submit-btn">Send</button>
+            <input type="text" id="input-field" placeholder="Type your message...">
+            <button id="mic-btn" class="action-btn" title="Speak your message">
+                <i class="fas fa-microphone"></i>
+            </button>
+            <button id="submit-btn" class="action-btn" title="Send message">
+                <i class="fas fa-paper-plane"></i>
+            </button>
         </div>
     </div>
     <script src="{{ url_for('static', filename='script.js') }}"></script>
