@@ -63,12 +63,6 @@ function escapeHtml(text) {
     return element.innerHTML;
 }
 
-    // Function to format markdown content to HTML safely
-    function formatMessageText(text) {
-       
-        return text;
-    }
-
 
     // Load chat history from the server
     function loadChatHistory() {
@@ -167,11 +161,9 @@ function escapeHtml(text) {
             messageDiv.dataset.messageId = messageId;
         }
 
-        const formattedText = (role === 'processing') ? text : formatMessageText(text);
-        
         const bubbleDiv = document.createElement('div');
         bubbleDiv.classList.add('message-bubble');
-        bubbleDiv.innerHTML = formattedText;
+        bubbleDiv.innerHTML = (role === 'processing') ? text : text;
 
         const messageInfoDiv = document.createElement('div');
         messageInfoDiv.classList.add('message-info');

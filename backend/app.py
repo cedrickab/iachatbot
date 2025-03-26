@@ -55,7 +55,7 @@ def init_db():
     )
     ''')
     
-    # Create conversations table
+    # Create conversations tabl
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS conversations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
