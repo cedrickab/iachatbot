@@ -1,11 +1,18 @@
 document.addEventListener('DOMContentLoaded', () => {
+    // DOM Elements
     const chatWindow = document.getElementById('chat-window');
     const inputField = document.getElementById('input-field');
     const micBtn = document.getElementById('mic-btn');
     const submitBtn = document.getElementById('submit-btn');
     const clearBtn = document.getElementById('clear-btn');
-    
-    // Supported languages with their BCP 47 language tags
+    const settingsBtn = document.getElementById('settings-btn');
+    const settingsModal = document.getElementById('settings-modal');
+    const closeModalBtn = document.querySelector('.close-modal');
+    const darkModeToggle = document.getElementById('dark-mode-toggle');
+    const speechLanguageSelect = document.getElementById('speech-language');
+
+    // App State
+    let selectedLanguage = 'en-US'; // Default language
     const supportedLanguages = [
         { code: 'en-US', name: 'English (US)' },
         { code: 'en-GB', name: 'English (UK)' },
@@ -21,43 +28,100 @@ document.addEventListener('DOMContentLoaded', () => {
         { code: 'hi-IN', name: 'Hindi' }
     ];
 
-    let selectedLanguage = 'en-US'; // Default language
-    
-    // Focus input field on load
-    inputField.focus();
-    
-    // Function to format a date timestamp nicely
+    // Initialize the app
+    function init() {
+        loadPreferences();
+        setupEventListeners();
+        loadChatHistory();
+        inputField.focus();
+    }
+
+    // Load user preferences from localStorage
+    function loadPreferences() {
+        const savedDarkMode = localStorage.getItem('darkMode') === 'true';
+        const savedLanguage = localStorage.getItem('speechLanguage') || 'en-US';
+
+        if (savedDarkMode) {
+            document.body.classList.add('dark-mode');
+            darkModeToggle.checked = true;
+        }
+
+        speechLanguageSelect.value = savedLanguage;
+        selectedLanguage = savedLanguage;
+    }
+
+    // Set up all event listeners
+    function setupEventListeners() {
+        // Dark mode toggle
+        darkModeToggle.addEventListener('change', toggleDarkMode);
+        
+        // Language selection
+        speechLanguageSelect.addEventListener('change', handleLanguageChange);
+        
+        // Settings modal
+        settingsBtn.addEventListener('click', openSettingsModal);
+        closeModalBtn.addEventListener('click', closeSettingsModal);
+        window.addEventListener('click', handleOutsideModalClick);
+        
+        // Chat functionality
+        submitBtn.addEventListener('click', handleSubmit);
+        inputField.addEventListener('keypress', handleInputKeyPress);
+        micBtn.addEventListener('click', handleMicClick);
+        clearBtn.addEventListener('click', handleClearClick);
+    }
+
+    // Dark mode toggle handler
+    function toggleDarkMode() {
+        document.body.classList.toggle('dark-mode');
+        localStorage.setItem('darkMode', darkModeToggle.checked);
+    }
+
+    // Language change handler
+    function handleLanguageChange(e) {
+        selectedLanguage = e.target.value;
+        localStorage.setItem('speechLanguage', selectedLanguage);
+    }
+
+    // Settings modal handlers
+    function openSettingsModal() {
+        settingsModal.style.display = 'flex';
+    }
+
+    function closeSettingsModal() {
+        settingsModal.style.display = 'none';
+    }
+
+    function handleOutsideModalClick(event) {
+        if (event.target === settingsModal) {
+            closeSettingsModal();
+        }
+    }
+
+    // Format timestamp for messages
     function formatTimestamp(timestamp) {
         const date = new Date(timestamp);
         const now = new Date();
         
-        // If it's today, just show the time
         if (date.toDateString() === now.toDateString()) {
             return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         }
         
-        // If it's in the last 7 days, show the day name and time
         const oneWeekAgo = new Date();
         oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+        
         if (date > oneWeekAgo) {
-            return date.toLocaleDateString([], { weekday: 'short' }) + ' ' + 
-                   date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            return `${date.toLocaleDateString([], { weekday: 'short' })} ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
         }
         
-        // Otherwise show the full date
-        return date.toLocaleDateString() + ' ' + 
-               date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        return `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
     }
-    
-    // Function to handle feedback clicks
+
+    // Send feedback to server
     function handleFeedback(messageId, value) {
         fetch('/feedback', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                message_id: messageId,
-                feedback: value
-            }),
+            body: JSON.stringify({ message_id: messageId, feedback: value }),
         })
         .then(response => response.json())
         .then(data => {
@@ -65,22 +129,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error('Failed to record feedback:', data.error);
             }
         })
-        .catch(error => {
-            console.error('Error sending feedback:', error);
-        });
+        .catch(console.error);
     }
 
-    // Function to safely escape HTML special characters
-    function escapeHtml(text) {
-        const element = document.createElement('div');
-        if (text) {
-            element.innerText = text;
-            element.textContent = text;
-        }
-        return element.innerHTML;
-    }
-
-    // Function to create language selector
+    // Create language selector dropdown
     function createLanguageSelector() {
         const selector = document.createElement('select');
         selector.id = 'language-selector';
@@ -90,9 +142,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const option = document.createElement('option');
             option.value = lang.code;
             option.textContent = lang.name;
-            if (lang.code === selectedLanguage) {
-                option.selected = true;
-            }
+            option.selected = lang.code === selectedLanguage;
             selector.appendChild(option);
         });
 
@@ -103,43 +153,20 @@ document.addEventListener('DOMContentLoaded', () => {
         return selector;
     }
 
-    // Load chat history from the server
+    // Load chat history from server
     function loadChatHistory() {
-        chatWindow.innerHTML = ''; // Clear existing messages
-        
-        // Show loading indicator
-        const loadingMessage = document.createElement('div');
-        loadingMessage.classList.add('message', 'assistant');
-        loadingMessage.innerHTML = `
-            <div class="message-bubble">
-                <div class="typing-indicator">
-                    <span></span><span></span><span></span>
-                </div>
-            </div>
-        `;
-        chatWindow.appendChild(loadingMessage);
+        chatWindow.innerHTML = '';
+        showLoadingIndicator();
         
         fetch('/get-history')
             .then(response => response.json())
             .then(data => {
-                chatWindow.innerHTML = ''; // Clear loading indicator
+                chatWindow.innerHTML = '';
                 
                 if (data.status === 'success') {
                     if (data.history.length === 0) {
-                        // Show welcome message if no history
-                        const welcomeMessage = document.createElement('div');
-                        welcomeMessage.classList.add('message', 'assistant');
-                        welcomeMessage.innerHTML = `
-                            <div class="message-bubble">
-                                Hello! How can I assist you today? Ask me anything.
-                            </div>
-                            <div class="message-info">
-                                <div class="timestamp">Now</div>
-                            </div>
-                        `;
-                        chatWindow.appendChild(welcomeMessage);
+                        showWelcomeMessage();
                     } else {
-                        // Add each message from history
                         data.history.forEach(msg => {
                             addMessage(
                                 msg.role, 
@@ -151,163 +178,175 @@ document.addEventListener('DOMContentLoaded', () => {
                             );
                         });
                     }
-                    
-                    chatWindow.scrollTop = chatWindow.scrollHeight;
+                    scrollToBottom();
                 } else {
-                    console.error('Failed to load history:', data.error);
-                    // Show error message
-                    const errorMessage = document.createElement('div');
-                    errorMessage.classList.add('message', 'assistant', 'error');
-                    errorMessage.innerHTML = `
-                        <div class="message-bubble">
-                            Sorry, I couldn't load the conversation history. Please refresh the page or try again later.
-                        </div>
-                        <div class="message-info">
-                            <div class="timestamp">Now</div>
-                        </div>
-                    `;
-                    chatWindow.appendChild(errorMessage);
+                    showErrorMessage('Failed to load history:', data.error);
                 }
             })
             .catch(error => {
-                console.error('Error loading history:', error);
-                chatWindow.innerHTML = ''; // Clear loading indicator
-                
-                // Show error message
-                const errorMessage = document.createElement('div');
-                errorMessage.classList.add('message', 'assistant', 'error');
-                errorMessage.innerHTML = `
-                    <div class="message-bubble">
-                        Sorry, I couldn't load the conversation history. Please refresh the page or try again later.
-                    </div>
-                    <div class="message-info">
-                        <div class="timestamp">Now</div>
-                    </div>
-                `;
-                chatWindow.appendChild(errorMessage);
+                showErrorMessage('Error loading history:', error);
             });
     }
 
-    // Try to load history when page loads
-    loadChatHistory();
+    // Show loading indicator
+    function showLoadingIndicator() {
+        const loadingMessage = document.createElement('div');
+        loadingMessage.classList.add('message', 'assistant');
+        loadingMessage.innerHTML = `
+            <div class="message-bubble">
+                <div class="typing-indicator">
+                    <span></span><span></span><span></span>
+                </div>
+            </div>
+        `;
+        chatWindow.appendChild(loadingMessage);
+    }
 
-    // Add a message to the chat window
+    // Show welcome message
+    function showWelcomeMessage() {
+        const welcomeMessage = document.createElement('div');
+        welcomeMessage.classList.add('message', 'assistant');
+        welcomeMessage.innerHTML = `
+            <div class="message-bubble">
+                Hello! How can I assist you today? Ask me anything.
+            </div>
+            <div class="message-info">
+                <div class="timestamp">Now</div>
+            </div>
+        `;
+        chatWindow.appendChild(welcomeMessage);
+    }
+
+    // Show error message
+    function showErrorMessage(error, details = '') {
+        console.error(error, details);
+        const errorMessage = document.createElement('div');
+        errorMessage.classList.add('message', 'assistant', 'error');
+        errorMessage.innerHTML = `
+            <div class="message-bubble">
+                Sorry, I couldn't load the conversation history. Please refresh the page or try again later.
+            </div>
+            <div class="message-info">
+                <div class="timestamp">Now</div>
+            </div>
+        `;
+        chatWindow.appendChild(errorMessage);
+        scrollToBottom();
+    }
+
+    // Scroll chat to bottom
+    function scrollToBottom() {
+        chatWindow.scrollTop = chatWindow.scrollHeight;
+    }
+
+    // Add message to chat window
     function addMessage(role, text, timestamp = null, save = true, messageId = null, feedback = 0) {
         const messageDiv = document.createElement('div');
         messageDiv.classList.add('message', role);
         
-        if (messageId) {
-            messageDiv.dataset.messageId = messageId;
-        }
+        if (messageId) messageDiv.dataset.messageId = messageId;
 
         const bubbleDiv = document.createElement('div');
         bubbleDiv.classList.add('message-bubble');
-        bubbleDiv.innerHTML = (role === 'processing') ? text : text;
+        bubbleDiv.innerHTML = text;
 
+        const messageInfoDiv = createMessageInfoDiv(timestamp, role, messageId, feedback);
+        
+        messageDiv.appendChild(bubbleDiv);
+        messageDiv.appendChild(messageInfoDiv);
+        chatWindow.appendChild(messageDiv);
+        scrollToBottom();
+    }
+
+    // Create message info div with timestamp and feedback buttons
+    function createMessageInfoDiv(timestamp, role, messageId, feedback) {
         const messageInfoDiv = document.createElement('div');
         messageInfoDiv.classList.add('message-info');
         
         const timestampDiv = document.createElement('div');
         timestampDiv.classList.add('timestamp');
-        
-        // Use provided timestamp or create new one
-        const messageTime = timestamp ? formatTimestamp(timestamp) : 'Now';
-        timestampDiv.textContent = messageTime;
-        
+        timestampDiv.textContent = timestamp ? formatTimestamp(timestamp) : 'Now';
         messageInfoDiv.appendChild(timestampDiv);
         
-        // Add feedback buttons for assistant messages only (not processing messages)
         if (role === 'assistant' && messageId && !messageId.startsWith('processing-')) {
-            const feedbackDiv = document.createElement('div');
-            feedbackDiv.classList.add('feedback-buttons');
-            
-            const likeBtn = document.createElement('button');
-            likeBtn.classList.add('feedback-btn', 'like-btn');
-            likeBtn.innerHTML = '<i class="fas fa-thumbs-up"></i>';
-            likeBtn.title = 'This was helpful';
-            
-            const dislikeBtn = document.createElement('button');
-            dislikeBtn.classList.add('feedback-btn', 'dislike-btn');
-            dislikeBtn.innerHTML = '<i class="fas fa-thumbs-down"></i>';
-            dislikeBtn.title = 'This was not helpful';
-            
-            // Set active state based on existing feedback
-            if (feedback === 1) {
-                likeBtn.classList.add('active');
-            } else if (feedback === -1) {
-                dislikeBtn.classList.add('active');
-            }
-            
-            // Add event listeners
-            likeBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                
-                // Toggle active state
-                const isActive = likeBtn.classList.contains('active');
-                const newValue = isActive ? 0 : 1;
-                
-                // Reset both buttons
-                likeBtn.classList.remove('active');
-                dislikeBtn.classList.remove('active');
-                
-                // Set new state if not removing
-                if (newValue !== 0) {
-                    likeBtn.classList.add('active');
-                }
-                
-                handleFeedback(messageId, newValue);
-            });
-            
-            dislikeBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                
-                // Toggle active state
-                const isActive = dislikeBtn.classList.contains('active');
-                const newValue = isActive ? 0 : -1;
-                
-                // Reset both buttons
-                likeBtn.classList.remove('active');
-                dislikeBtn.classList.remove('active');
-                
-                // Set new state if not removing
-                if (newValue !== 0) {
-                    dislikeBtn.classList.add('active');
-                }
-                
-                handleFeedback(messageId, newValue);
-            });
-            
-            feedbackDiv.appendChild(likeBtn);
-            feedbackDiv.appendChild(dislikeBtn);
-            messageInfoDiv.appendChild(feedbackDiv);
+            messageInfoDiv.appendChild(createFeedbackButtons(messageId, feedback));
         }
         
-        messageDiv.appendChild(bubbleDiv);
-        messageDiv.appendChild(messageInfoDiv);
-        
-        chatWindow.appendChild(messageDiv);
-        chatWindow.scrollTop = chatWindow.scrollHeight; // Scroll to the bottom
+        return messageInfoDiv;
     }
 
-    // Handle the "Send" button click
-    submitBtn.addEventListener('click', async () => {
+    // Create feedback buttons
+    function createFeedbackButtons(messageId, feedback) {
+        const feedbackDiv = document.createElement('div');
+        feedbackDiv.classList.add('feedback-buttons');
+        
+        const likeBtn = createFeedbackButton('like', 'fa-thumbs-up', 'This was helpful', feedback === 1);
+        const dislikeBtn = createFeedbackButton('dislike', 'fa-thumbs-down', 'This was not helpful', feedback === -1);
+        
+        likeBtn.addEventListener('click', (e) => handleFeedbackClick(e, messageId, likeBtn, dislikeBtn, 1));
+        dislikeBtn.addEventListener('click', (e) => handleFeedbackClick(e, messageId, dislikeBtn, likeBtn, -1));
+        
+        feedbackDiv.appendChild(likeBtn);
+        feedbackDiv.appendChild(dislikeBtn);
+        
+        return feedbackDiv;
+    }
+
+    // Create a single feedback button
+    function createFeedbackButton(type, icon, title, isActive) {
+        const btn = document.createElement('button');
+        btn.classList.add('feedback-btn', `${type}-btn`);
+        if (isActive) btn.classList.add('active');
+        btn.innerHTML = `<i class="fas ${icon}"></i>`;
+        btn.title = title;
+        return btn;
+    }
+
+    // Handle feedback button click
+    function handleFeedbackClick(e, messageId, clickedBtn, otherBtn, value) {
+        e.preventDefault();
+        const isActive = clickedBtn.classList.contains('active');
+        const newValue = isActive ? 0 : value;
+        
+        clickedBtn.classList.toggle('active', newValue !== 0);
+        otherBtn.classList.remove('active');
+        
+        handleFeedback(messageId, newValue);
+    }
+
+    // Handle message submission
+    async function handleSubmit() {
         const inputText = inputField.value.trim();
+        if (!inputText) return;
 
-        if (!inputText) {
-            inputField.focus();
-            return;
-        }
-
-        // Display user's message
+        // Add user message and clear input
         addMessage('user', inputText);
-        inputField.value = ''; // Clear the input field
+        inputField.value = '';
         inputField.focus();
 
-        // Display "Processing..." message with typing indicator
-        const processingId = 'processing-' + Date.now();
+        // Show processing indicator
+        const processingId = `processing-${Date.now()}`;
+        showProcessingIndicator(processingId);
+
+        // Disable submit button during processing
+        submitBtn.disabled = true;
+
+        try {
+            const response = await processUserInput(inputText);
+            removeProcessingMessage(processingId);
+            addMessage('assistant', response.response, new Date().toISOString(), true, response.assistant_message_id);
+        } catch (error) {
+            handleProcessingError(processingId, error);
+        } finally {
+            submitBtn.disabled = false;
+        }
+    }
+
+    // Show processing indicator
+    function showProcessingIndicator(id) {
         const processingDiv = document.createElement('div');
         processingDiv.classList.add('message', 'assistant');
-        processingDiv.dataset.messageId = processingId;
+        processingDiv.dataset.messageId = id;
         processingDiv.innerHTML = `
             <div class="message-bubble">
                 <div class="typing-indicator">
@@ -319,106 +358,96 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         `;
         chatWindow.appendChild(processingDiv);
-        chatWindow.scrollTop = chatWindow.scrollHeight;
+        scrollToBottom();
+    }
 
-        // Disable the submit button
-        submitBtn.disabled = true;
+    // Process user input with server
+    async function processUserInput(input) {
+        const response = await fetch('/process-input', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: input }),
+        });
 
-        try {
-            const response = await fetch('/process-input', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ message: inputText }),
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Failed to fetch response from the server');
-            }
-
-            const data = await response.json();
-
-            // Find the processing message and remove it
-            const processingMessage = document.querySelector(`[data-message-id="${processingId}"]`);
-            if (processingMessage) {
-                processingMessage.remove();
-            }
-            
-            // Add the actual response with message ID for feedback
-            addMessage('assistant', data.response, new Date().toISOString(), true, data.assistant_message_id);
-            
-        } catch (error) {
-            console.error('Error:', error);
-            
-            // Find the processing message
-            const processingMessage = document.querySelector(`[data-message-id="${processingId}"]`);
-            if (processingMessage) {
-                processingMessage.remove();
-                
-                // Add error message
-                const errorDiv = document.createElement('div');
-                errorDiv.classList.add('message', 'assistant', 'error');
-                errorDiv.innerHTML = `
-                    <div class="message-bubble">
-                        Sorry, I couldn't process your request. Please try again later.
-                    </div>
-                    <div class="message-info">
-                        <div class="timestamp">Now</div>
-                    </div>
-                `;
-                chatWindow.appendChild(errorDiv);
-                chatWindow.scrollTop = chatWindow.scrollHeight;
-            }
-        } finally {
-            // Re-enable the submit button
-            submitBtn.disabled = false;
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to fetch response from the server');
         }
-    });
 
-    // Handle "Enter" key press in the input field
-    inputField.addEventListener('keypress', (event) => {
+        return await response.json();
+    }
+
+    // Remove processing message
+    function removeProcessingMessage(id) {
+        const processingMessage = document.querySelector(`[data-message-id="${id}"]`);
+        if (processingMessage) processingMessage.remove();
+    }
+
+    // Handle processing errors
+    function handleProcessingError(processingId, error) {
+        console.error('Error:', error);
+        removeProcessingMessage(processingId);
+        
+        const errorDiv = document.createElement('div');
+        errorDiv.classList.add('message', 'assistant', 'error');
+        errorDiv.innerHTML = `
+            <div class="message-bubble">
+                Sorry, I couldn't process your request. Please try again later.
+            </div>
+            <div class="message-info">
+                <div class="timestamp">Now</div>
+            </div>
+        `;
+        chatWindow.appendChild(errorDiv);
+        scrollToBottom();
+    }
+
+    // Handle input field key press
+    function handleInputKeyPress(event) {
         if (event.key === 'Enter' && !event.shiftKey) {
-            event.preventDefault(); // Prevent form submission
-            if (!submitBtn.disabled) {
-                submitBtn.click(); // Trigger the submit button click
-            }
+            event.preventDefault();
+            if (!submitBtn.disabled) submitBtn.click();
         }
-    });
+    }
 
-    // Handle mic button click (speech-to-text)
-    micBtn.addEventListener('click', async () => {
-        if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+    // Handle microphone button click
+    async function handleMicClick() {
+        if (!isSpeechRecognitionSupported()) {
             alert('Speech recognition is not supported in this browser. Please use Chrome, Edge, or Safari.');
             return;
         }
 
+        const recognition = createSpeechRecognition();
+        
+        if (micBtn.classList.contains('recording')) {
+            recognition.stop();
+        } else {
+            recognition.start();
+        }
+    }
+
+    // Check if speech recognition is supported
+    function isSpeechRecognitionSupported() {
+        return 'webkitSpeechRecognition' in window || 'SpeechRecognition' in window;
+    }
+
+    // Create speech recognition instance
+    function createSpeechRecognition() {
         const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-        recognition.lang = selectedLanguage; // Use dynamically selected language
+        recognition.lang = selectedLanguage;
         recognition.continuous = false;
         recognition.interimResults = false;
 
-        // Change icon and add recording class when recognition starts
         recognition.onstart = () => {
             micBtn.classList.add('recording');
-            micBtn.innerHTML = '<i class="fas fa-stop"></i>'; // Change icon to "stop"
-            micBtn.title = 'Stop recording'; // Update tooltip
-            
-            // Show recording indicator in input
+            micBtn.innerHTML = '<i class="fas fa-stop"></i>';
+            micBtn.title = 'Stop recording';
             inputField.placeholder = 'Listening...';
             inputField.classList.add('recording');
         };
 
-        // Revert icon and remove recording class when recognition ends
         recognition.onend = () => {
-            micBtn.classList.remove('recording');
-            micBtn.innerHTML = '<i class="fas fa-microphone"></i>'; // Revert to default icon
-            micBtn.title = 'Speak your message'; // Revert tooltip
-            
-            // Restore input
-            inputField.placeholder = 'Type your message...';
-            inputField.classList.remove('recording');
+            resetMicButton();
             inputField.focus();
         };
 
@@ -426,7 +455,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const transcript = event.results[0][0].transcript;
             inputField.value = transcript;
             
-            // If the transcript is confident (> 0.8), automatically send
             if (event.results[0][0].confidence > 0.8) {
                 submitBtn.click();
             }
@@ -436,42 +464,48 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Speech recognition error:', event.error);
             
             if (event.error !== 'aborted') {
-                // Display non-aborted errors to the user
-                const errorMessage = document.createElement('div');
-                errorMessage.classList.add('message', 'assistant', 'error');
-                errorMessage.innerHTML = `
-                    <div class="message-bubble">
-                        I couldn't understand that. Please try speaking again or type your message.
-                    </div>
-                    <div class="message-info">
-                        <div class="timestamp">Now</div>
-                    </div>
-                `;
-                chatWindow.appendChild(errorMessage);
-                chatWindow.scrollTop = chatWindow.scrollHeight;
+                showSpeechRecognitionError();
             }
             
-            micBtn.classList.remove('recording');
-            micBtn.innerHTML = '<i class="fas fa-microphone"></i>';
-            micBtn.title = 'Speak your message';
-            
-            // Restore input
-            inputField.placeholder = 'Type your message...';
-            inputField.classList.remove('recording');
+            resetMicButton();
             inputField.focus();
         };
 
-        // Toggle recording
-        if (micBtn.classList.contains('recording')) {
-            recognition.stop();
-        } else {
-            recognition.start();
-        }
-    });
-    
-    // Handle clear button click
-    clearBtn.addEventListener('click', async () => {
-        // Create a confirmation dialog
+        return recognition;
+    }
+
+    // Reset mic button to default state
+    function resetMicButton() {
+        micBtn.classList.remove('recording');
+        micBtn.innerHTML = '<i class="fas fa-microphone"></i>';
+        micBtn.title = 'Speak your message';
+        inputField.placeholder = 'Type your message...';
+        inputField.classList.remove('recording');
+    }
+
+    // Show speech recognition error
+    function showSpeechRecognitionError() {
+        const errorMessage = document.createElement('div');
+        errorMessage.classList.add('message', 'assistant', 'error');
+        errorMessage.innerHTML = `
+            <div class="message-bubble">
+                I couldn't understand that. Please try speaking again or type your message.
+            </div>
+            <div class="message-info">
+                <div class="timestamp">Now</div>
+            </div>
+        `;
+        chatWindow.appendChild(errorMessage);
+        scrollToBottom();
+    }
+
+    // Handle clear conversation button click
+    function handleClearClick() {
+        showClearConfirmationDialog();
+    }
+
+    // Show clear confirmation dialog
+    function showClearConfirmationDialog() {
         const confirmDialog = document.createElement('div');
         confirmDialog.classList.add('confirm-dialog');
         confirmDialog.innerHTML = `
@@ -486,99 +520,35 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
         document.body.appendChild(confirmDialog);
         
-        // Add event listeners to dialog buttons
         confirmDialog.querySelector('.cancel-btn').addEventListener('click', () => {
             document.body.removeChild(confirmDialog);
         });
         
-        confirmDialog.querySelector('.confirm-btn').addEventListener('click', async () => {
+        confirmDialog.querySelector('.confirm-btn').addEventListener('click', () => {
             document.body.removeChild(confirmDialog);
-            
-            try {
-                const response = await fetch('/clear-session', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    }
-                });
-                
-                if (!response.ok) {
-                    throw new Error('Failed to clear server session');
-                }
-                
-                // Clear the chat window and show welcome message
-                chatWindow.innerHTML = '';
-                const welcomeMessage = document.createElement('div');
-                welcomeMessage.classList.add('message', 'assistant');
-                welcomeMessage.innerHTML = `
-                    <div class="message-bubble">
-                        Conversation cleared. How can I help you now?
-                    </div>
-                    <div class="message-info">
-                        <div class="timestamp">Now</div>
-                    </div>
-                `;
-                chatWindow.appendChild(welcomeMessage);
-                
-                // Focus the input field
-                inputField.focus();
-                
-            } catch (error) {
-                console.error('Error clearing session:', error);
-                
-                // Show error message
-                const errorMessage = document.createElement('div');
-                errorMessage.classList.add('message', 'assistant', 'error');
-                errorMessage.innerHTML = `
-                    <div class="message-bubble">
-                        Sorry, I couldn't clear the conversation. Please try again later.
-                    </div>
-                    <div class="message-info">
-                        <div class="timestamp">Now</div>
-                    </div>
-                `;
-                chatWindow.appendChild(errorMessage);
-                chatWindow.scrollTop = chatWindow.scrollHeight;
-            }
+            clearConversation();
         });
-    });
+    }
 
-    // Create and add language selector to the UI
-    const languageSelectorContainer = document.createElement('div');
-    languageSelectorContainer.classList.add('language-selector-container');
-    const languageLabel = document.createElement('label');
-    languageLabel.textContent = 'Speech Language: ';
-    languageSelectorContainer.appendChild(languageLabel);
-    languageSelectorContainer.appendChild(createLanguageSelector());
+    // Clear conversation with server
+    async function clearConversation() {
+        try {
+            const response = await fetch('/clear-session', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            
+            if (!response.ok) throw new Error('Failed to clear server session');
+            
+            chatWindow.innerHTML = '';
+            showWelcomeMessage();
+            inputField.focus();
+        } catch (error) {
+            console.error('Error clearing session:', error);
+            showErrorMessage('Error clearing conversation:', error);
+        }
+    }
 
-    // Insert the language selector near the mic button
-    micBtn.parentNode.insertBefore(languageSelectorContainer, micBtn.nextSibling);
-
-    // Add some basic styling for the language selector
-    const style = document.createElement('style');
-    style.textContent = `
-        .language-selector-container {
-            display: flex;
-            align-items: center;
-            margin: 10px 0;
-        }
-        .language-selector {
-            margin-left: 10px;
-            padding: 5px;
-            border-radius: 4px;
-        }
-        .recording {
-            color: #e53935;
-        }
-        .recording-indicator {
-            display: inline-block;
-            margin-left: 8px;
-            width: 10px;
-            height: 10px;
-            background: #e53935;
-            border-radius: 50%;
-            animation: blink 1s infinite;
-        }
-    `;
-    document.head.appendChild(style);
+    // Start the application
+    init();
 });
