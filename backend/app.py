@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify, render_template, session
+import markdown2
 import os
 from dotenv import load_dotenv
 import logging
@@ -9,6 +10,9 @@ import uuid
 from datetime import datetime
 import sqlite3
 import time
+import re
+import markdown
+
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -231,11 +235,17 @@ def process_input():
 
         # Extract the assistant's response
         assistant_response = completion.choices[0].message.content
+
+        # Step 1: Remove any trailing [doc*] pattern
+        assistant_response = re.sub(r'\[doc\d+\]', '', assistant_response)  # Remove any [doc*] pattern
+
+        assistant_response = markdown.markdown(assistant_response)
+
         
         # Save assistant message to database
         assistant_message_id = save_message(user_id, assistant_response, "assistant")
         
-        # Return the response with message IDs for feedback
+        # Return the response with message IDs for feedbacK
         return jsonify({
             "response": assistant_response,
             "user_message_id": user_message_id,

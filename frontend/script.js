@@ -53,26 +53,22 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Function to safely convert markdown-style code blocks to HTML
-    function formatMessageText(text) {
-        // Replace code blocks
-        let formattedText = text.replace(/```([\s\S]*?)```/g, function(match, code) {
-            return `<pre><code>${code}</code></pre>`;
-        });
-        
-        // Replace inline code
-        formattedText = formattedText.replace(/`([^`]+)`/g, '<code>$1</code>');
-        
-        // Replace URLs with clickable links
-        formattedText = formattedText.replace(
-            /(https?:\/\/[^\s]+)/g, 
-            '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
-        );
-        
-        // Replace line breaks with <br>
-        formattedText = formattedText.replace(/\n/g, '<br>');
-        
-        return formattedText;
+// Function to safely escape HTML special characters
+function escapeHtml(text) {
+    const element = document.createElement('div');
+    if (text) {
+        element.innerText = text;
+        element.textContent = text;
     }
+    return element.innerHTML;
+}
+
+    // Function to format markdown content to HTML safely
+    function formatMessageText(text) {
+       
+        return text;
+    }
+
 
     // Load chat history from the server
     function loadChatHistory() {
