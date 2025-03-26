@@ -237,7 +237,7 @@ def process_input():
         assistant_response = completion.choices[0].message.content
 
         # Step 1: Remove any trailing [doc*] pattern
-        assistant_response = re.sub(r'\[doc\d+\]', '', assistant_response)  # Remove any [doc*] patter
+        assistant_response = re.sub(r'\[doc\d+\]', '', assistant_response)  # Remove any [doc*] pattern
 
         assistant_response = markdown.markdown(assistant_response)
 
