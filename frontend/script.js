@@ -5,6 +5,24 @@ document.addEventListener('DOMContentLoaded', () => {
     const submitBtn = document.getElementById('submit-btn');
     const clearBtn = document.getElementById('clear-btn');
     
+    // Supported languages with their BCP 47 language tags
+    const supportedLanguages = [
+        { code: 'en-US', name: 'English (US)' },
+        { code: 'en-GB', name: 'English (UK)' },
+        { code: 'fr-FR', name: 'French' },
+        { code: 'es-ES', name: 'Spanish (Spain)' },
+        { code: 'de-DE', name: 'German' },
+        { code: 'it-IT', name: 'Italian' },
+        { code: 'pt-BR', name: 'Portuguese (Brazil)' },
+        { code: 'ru-RU', name: 'Russian' },
+        { code: 'zh-CN', name: 'Chinese (Simplified)' },
+        { code: 'ja-JP', name: 'Japanese' },
+        { code: 'ar-SA', name: 'Arabic' },
+        { code: 'hi-IN', name: 'Hindi' }
+    ];
+
+    let selectedLanguage = 'en-US'; // Default language
+    
     // Focus input field on load
     inputField.focus();
     
@@ -52,17 +70,38 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Function to safely convert markdown-style code blocks to HTML
-// Function to safely escape HTML special characters
-function escapeHtml(text) {
-    const element = document.createElement('div');
-    if (text) {
-        element.innerText = text;
-        element.textContent = text;
+    // Function to safely escape HTML special characters
+    function escapeHtml(text) {
+        const element = document.createElement('div');
+        if (text) {
+            element.innerText = text;
+            element.textContent = text;
+        }
+        return element.innerHTML;
     }
-    return element.innerHTML;
-}
 
+    // Function to create language selector
+    function createLanguageSelector() {
+        const selector = document.createElement('select');
+        selector.id = 'language-selector';
+        selector.classList.add('language-selector');
+
+        supportedLanguages.forEach(lang => {
+            const option = document.createElement('option');
+            option.value = lang.code;
+            option.textContent = lang.name;
+            if (lang.code === selectedLanguage) {
+                option.selected = true;
+            }
+            selector.appendChild(option);
+        });
+
+        selector.addEventListener('change', (e) => {
+            selectedLanguage = e.target.value;
+        });
+
+        return selector;
+    }
 
     // Load chat history from the server
     function loadChatHistory() {
@@ -356,7 +395,7 @@ function escapeHtml(text) {
         }
 
         const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-        recognition.lang = 'fr-FR'; // Set to French
+        recognition.lang = selectedLanguage; // Use dynamically selected language
         recognition.continuous = false;
         recognition.interimResults = false;
 
@@ -504,61 +543,33 @@ function escapeHtml(text) {
         });
     });
 
-    // Add styles for confirmation dialog
+    // Create and add language selector to the UI
+    const languageSelectorContainer = document.createElement('div');
+    languageSelectorContainer.classList.add('language-selector-container');
+    const languageLabel = document.createElement('label');
+    languageLabel.textContent = 'Speech Language: ';
+    languageSelectorContainer.appendChild(languageLabel);
+    languageSelectorContainer.appendChild(createLanguageSelector());
+
+    // Insert the language selector near the mic button
+    micBtn.parentNode.insertBefore(languageSelectorContainer, micBtn.nextSibling);
+
+    // Add some basic styling for the language selector
     const style = document.createElement('style');
     style.textContent = `
-        .confirm-dialog {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.5);
+        .language-selector-container {
             display: flex;
-            justify-content: center;
             align-items: center;
-            z-index: 1000;
+            margin: 10px 0;
         }
-        
-        .confirm-dialog-content {
-            background: white;
-            padding: 20px;
-            border-radius: 12px;
-            max-width: 400px;
-            width: 90%;
-            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
+        .language-selector {
+            margin-left: 10px;
+            padding: 5px;
+            border-radius: 4px;
         }
-        
-        .confirm-dialog h3 {
-            margin-top: 0;
-            color: #333;
+        .recording {
+            color: #e53935;
         }
-        
-        .confirm-dialog-buttons {
-            display: flex;
-            justify-content: flex-end;
-            gap: 12px;
-            margin-top: 20px;
-        }
-        
-        .cancel-btn, .confirm-btn {
-            padding: 8px 16px;
-            border-radius: 6px;
-            border: none;
-            cursor: pointer;
-            font-weight: 500;
-        }
-        
-        .cancel-btn {
-            background: #f0f0f0;
-            color: #333;
-        }
-        
-        .confirm-btn {
-            background: #e53935;
-            color: white;
-        }
-        
         .recording-indicator {
             display: inline-block;
             margin-left: 8px;
