@@ -37,7 +37,7 @@ client = AzureOpenAI(
 )
 
 # Initialize Flask app
-app = Flask(__name__, static_folder='../frontend', template_folder='../frontend')
+app = Flask(__name__, static_folder='../frontend/static', template_folder='../frontend/templates',static_url_path='/static')
 app.secret_key = os.getenv("FLASK_SECRET_KEY", os.urandom(24))
 
 # Database setup

@@ -207,13 +207,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const welcomeMessage = document.createElement('div');
         welcomeMessage.classList.add('message', 'assistant');
         welcomeMessage.innerHTML = `
-            <div class="message-bubble">
-                Hello! How can I assist you today? Ask me anything.
-            </div>
-            <div class="message-info">
-                <div class="timestamp">Now</div>
-            </div>
-        `;
+        <div class="avatar">
+            <img src="/static/assistant-avatar.jpg" alt="Assistant Avatar">
+        </div>
+        <div class="message-bubble">
+            Hello! How can I assist you today? Ask me anything.
+        </div>
+        <div class="message-info">
+            <div class="timestamp">Now</div>
+        </div>
+    `;
         chatWindow.appendChild(welcomeMessage);
     }
 
@@ -245,6 +248,16 @@ document.addEventListener('DOMContentLoaded', () => {
         messageDiv.classList.add('message', role);
         
         if (messageId) messageDiv.dataset.messageId = messageId;
+
+    // Add avatar for assistant messages
+    if (role === 'assistant') {
+        const avatarDiv = document.createElement('div');
+        avatarDiv.classList.add('avatar');
+        avatarDiv.innerHTML = `
+            <img src="/static/assistant-avatar.jpg" alt="Assistant Avatar">
+        `;
+        messageDiv.appendChild(avatarDiv);
+    }
 
         const bubbleDiv = document.createElement('div');
         bubbleDiv.classList.add('message-bubble');

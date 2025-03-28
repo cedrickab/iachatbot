@@ -65,6 +65,9 @@
         <div id="chat-window">
             <!-- Default welcome message -->
             <div class="message assistant">
+                <div class="avatar">
+                    <img src="{{ url_for('static', filename='assistant-avatar.jpg') }}" alt="Assistant Avatar">
+                </div>
                 <div class="message-bubble">
                     Hello! How can I assist you today? Ask me anything.
                 </div>
@@ -73,6 +76,7 @@
                 </div>
             </div>
         </div>
+
         <div class="input-container">
             <input type="text" id="input-field" placeholder="Type your message...">
             <button id="mic-btn" class="action-btn" title="Speak your message">
