@@ -8,11 +8,11 @@ import azure.cognitiveservices.speech as speechsdk
 import json
 import uuid
 from datetime import datetime
-import sqlite3
 import time
 import re
 import markdown
-
+import pyodbc
+from flask_sqlalchemy import SQLAlchemy
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -40,31 +40,59 @@ client = AzureOpenAI(
 app = Flask(__name__, static_folder='../frontend/static', template_folder='../frontend/templates',static_url_path='/static')
 app.secret_key = os.getenv("FLASK_SECRET_KEY", os.urandom(24))
 
-# Database setup
-DB_PATH = "conversations.db"
+# Azure SQL Database configuration
+DB_CONFIG = {
+    'server': os.getenv('AZURE_SQL_SERVER'),
+    'database': os.getenv('AZURE_SQL_DATABASE'),
+    'username': os.getenv('AZURE_SQL_USERNAME'),
+    'password': os.getenv('AZURE_SQL_PASSWORD'),
+    'driver': '{ODBC Driver 18 for SQL Server}'
+}
+
+# Initialize SQLAlchemy
+app.config['SQLALCHEMY_DATABASE_URI'] = (
+    f"mssql+pyodbc://{DB_CONFIG['username']}:{DB_CONFIG['password']}@"
+    f"{DB_CONFIG['server']}/{DB_CONFIG['database']}?driver=ODBC+Driver+18+for+SQL+Server"
+)
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
+
+def get_db_connection():
+    conn_str = (
+        f"Driver={DB_CONFIG['driver']};"
+        f"Server=tcp:{DB_CONFIG['server']},1433;"
+        f"Database={DB_CONFIG['database']};"
+        f"Uid={DB_CONFIG['username']};"
+        f"Pwd={DB_CONFIG['password']};"
+        "Encrypt=yes;TrustServerCertificate=no;"
+        "Connection Timeout=30;"
+    )
+    return pyodbc.connect(conn_str)
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     # Create users table
     cursor.execute('''
-    CREATE TABLE IF NOT EXISTS users (
-        id TEXT PRIMARY KEY,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='users' AND xtype='U')
+    CREATE TABLE users (
+        id NVARCHAR(50) PRIMARY KEY,
+        created_at DATETIME2 DEFAULT GETDATE()
     )
     ''')
     
     # Create conversations table
     cursor.execute('''
-    CREATE TABLE IF NOT EXISTS conversations (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id TEXT,
-        message TEXT,
-        role TEXT,
-        timestamp TIMESTAMP,
-        message_id TEXT UNIQUE,
-        feedback INTEGER DEFAULT 0,
+    IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='conversations' AND xtype='U')
+    CREATE TABLE conversations (
+        id INT IDENTITY(1,1) PRIMARY KEY,
+        user_id NVARCHAR(50),
+        message NVARCHAR(MAX),
+        role NVARCHAR(50),
+        timestamp DATETIME2,
+        message_id NVARCHAR(50) UNIQUE,
+        feedback INT DEFAULT 0,
         FOREIGN KEY (user_id) REFERENCES users(id)
     )
     ''')
@@ -76,7 +104,13 @@ init_db()
 
 # Helper functions for database operations
 def get_or_create_user(user_id):
-    conn = sqlite3.connect(DB_PATH)
+    # Validate user_id
+    try:
+        uuid.UUID(user_id)
+    except (ValueError, TypeError):
+        raise ValueError("Invalid user_id. Must be a valid UUID.")
+    
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     cursor.execute("SELECT id FROM users WHERE id = ?", (user_id,))
@@ -93,7 +127,7 @@ def save_message(user_id, message, role, message_id=None):
     if not message_id:
         message_id = str(uuid.uuid4())
         
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     timestamp = datetime.now().isoformat()
@@ -109,11 +143,11 @@ def save_message(user_id, message, role, message_id=None):
     return message_id
 
 def get_conversation_history(user_id, limit=20):
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     cursor.execute(
-        "SELECT message, role, timestamp, message_id, feedback FROM conversations WHERE user_id = ? ORDER BY timestamp ASC LIMIT ?",
+        "SELECT message, role, timestamp, message_id, feedback FROM conversations WHERE user_id = ? ORDER BY timestamp ASC OFFSET 0 ROWS FETCH NEXT ? ROWS ONLY",
         (user_id, limit)
     )
     
@@ -131,7 +165,7 @@ def get_conversation_history(user_id, limit=20):
     return history
 
 def update_feedback(message_id, feedback):
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     cursor.execute(
@@ -161,8 +195,8 @@ def process_input():
     try:
         # Get user input from the request
         user_input = request.json.get('message')
-        if not user_input:
-            return jsonify({"error": "No message provided"}), 400
+        if not user_input or not isinstance(user_input, str) or len(user_input.strip()) == 0:
+            return jsonify({"error": "Invalid input. Message must be a non-empty string."}), 400
         
         # Get or create user_id
         user_id = session.get('user_id', str(uuid.uuid4()))
@@ -226,7 +260,7 @@ def process_input():
                         },
                         "embedding_dependency": {
                             "type": "deployment_name",
-                            "deployment_name": "text-embedding-ada-002"
+                            "deployment_name": "text-embedding-3-small"
                         }
                     }
                 }]
@@ -261,10 +295,17 @@ def feedback():
     try:
         data = request.json
         message_id = data.get('message_id')
-        feedback_value = data.get('feedback')  # 1 for like, -1 for dislike
+        feedback_value = data.get('feedback')  # 1 for like, -1 for dislike, 0 for neutral
         
-        if not message_id or feedback_value not in [1, -1, 0]:
-            return jsonify({"error": "Invalid feedback data"}), 400
+        # Validate message_id
+        try:
+            uuid.UUID(message_id)
+        except (ValueError, TypeError):
+            return jsonify({"error": "Invalid message_id. Must be a valid UUID."}), 400
+        
+        # Validate feedback_value
+        if feedback_value not in [1, -1, 0]:
+            return jsonify({"error": "Invalid feedback value. Must be 1, -1, or 0."}), 400
             
         updated = update_feedback(message_id, feedback_value)
         
@@ -285,7 +326,7 @@ def clear_session():
             return jsonify({"error": "No active session"}), 400
             
         # Delete all messages for this user
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("DELETE FROM conversations WHERE user_id = ?", (user_id,))
         conn.commit()
@@ -303,8 +344,23 @@ def get_history():
         user_id = session.get('user_id')
         if not user_id:
             return jsonify({"error": "No active session"}), 400
-            
-        history = get_conversation_history(user_id, limit=100)
+        
+        # Validate user_id
+        try:
+            uuid.UUID(user_id)
+        except (ValueError, TypeError):
+            return jsonify({"error": "Invalid user_id. Must be a valid UUID."}), 400
+        
+        # Validate limit
+        limit = request.args.get('limit', 100)
+        try:
+            limit = int(limit)
+            if limit <= 0 or limit > 100:
+                raise ValueError
+        except ValueError:
+            return jsonify({"error": "Invalid limit. Must be an integer between 1 and 100."}), 400
+        
+        history = get_conversation_history(user_id, limit=limit)
         
         return jsonify({
             "status": "success", 

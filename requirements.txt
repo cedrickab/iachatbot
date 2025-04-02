@@ -1,0 +1,9 @@
+flask
+python-dotenv
+openai
+azure-cognitiveservices-speech
+markdown2
+markdown
+pyodbc
+azure-identity
+flask_sqlalchemy
