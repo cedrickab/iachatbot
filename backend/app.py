@@ -11,6 +11,9 @@ import re
 import markdown
 import pyodbc
 from flask_sqlalchemy import SQLAlchemy
+from flask_cors import CORS
+
+
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -39,6 +42,12 @@ client = AzureOpenAI(
 # Initialize Flask app
 app = Flask(__name__, static_folder='../frontend/static', template_folder='../frontend/templates',static_url_path='/static')
 app.secret_key = os.getenv("FLASK_SECRET_KEY", os.urandom(24))
+app.config.update(
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='None'  # Allows cookies in cross-site requests
+)
+CORS(app, supports_credentials=True)
 
 # Azure SQL Database configuration
 DB_CONFIG = {
@@ -408,7 +417,7 @@ def clear_session():
 @app.route('/get-history', methods=['GET'])
 def get_history():
     try:
-        user_id = session.get('user_id')
+        user_id = session.get('user_id') or request.args.get('user_id')
         if not user_id:
             return jsonify({"error": "No active session"}), 400
         
@@ -506,3 +515,4 @@ def create_conversation():
 # Run the Flask app
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
+    
