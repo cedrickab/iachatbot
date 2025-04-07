@@ -11,8 +11,16 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>AI Assistant</h1>
+            <div class="header-left">
+                <button id="conversations-btn" title="Conversations">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <h1>AI Assistant</h1>
+            </div>
             <div class="header-actions">
+                <button id="new-conversation-btn" title="New conversation">
+                    <i class="fas fa-plus"></i>
+                </button>
                 <button id="settings-btn" title="Settings">
                     <i class="fas fa-cog"></i>
                 </button>
@@ -59,6 +67,16 @@
                         </select>
                     </div>
                 </div>
+            </div>
+        </div>
+
+        <div id="conversations-sidebar" class="sidebar">
+            <div class="sidebar-header">
+                <h2>Conversations</h2>
+                <button class="close-sidebar">&times;</button>
+            </div>
+            <div class="conversations-list">
+                <!-- Conversations will be populated here -->
             </div>
         </div>
 

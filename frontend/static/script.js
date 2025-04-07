@@ -10,6 +10,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const closeModalBtn = document.querySelector('.close-modal');
     const darkModeToggle = document.getElementById('dark-mode-toggle');
     const speechLanguageSelect = document.getElementById('speech-language');
+    const conversationsBtn = document.getElementById('conversations-btn');
+    const newConversationBtn = document.getElementById('new-conversation-btn');
+    const sidebar = document.getElementById('conversations-sidebar');
+    const closeSidebarBtn = document.querySelector('.close-sidebar');
+    
+    let currentConversationId = null;
 
     // App State
     let selectedLanguage = 'en-US'; // Default language
@@ -68,6 +74,18 @@ document.addEventListener('DOMContentLoaded', () => {
         inputField.addEventListener('keypress', handleInputKeyPress);
         micBtn.addEventListener('click', handleMicClick);
         clearBtn.addEventListener('click', handleClearClick);
+
+        // Conversations
+        conversationsBtn.addEventListener('click', () => {
+            sidebar.classList.add('open');
+            loadConversations();
+        });
+
+        closeSidebarBtn.addEventListener('click', () => {
+            sidebar.classList.remove('open');
+        });
+
+        newConversationBtn.addEventListener('click', createNewConversation);
     }
 
     // Dark mode toggle handler
@@ -560,6 +578,66 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Error clearing session:', error);
             showErrorMessage('Error clearing conversation:', error);
         }
+    }
+
+    // Load conversations
+    function loadConversations() {
+        fetch('/conversations')
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    const conversationsList = document.querySelector('.conversations-list');
+                    conversationsList.innerHTML = '';
+                    
+                    data.conversations.forEach(conv => {
+                        const convDiv = document.createElement('div');
+                        convDiv.className = 'conversation-item';
+                        if (conv.id === currentConversationId) {
+                            convDiv.classList.add('active');
+                        }
+                        convDiv.innerHTML = `
+                            <div class="conversation-title">${conv.title}</div>
+                            <div class="conversation-date">${formatTimestamp(conv.last_updated)}</div>
+                        `;
+                        convDiv.addEventListener('click', () => switchConversation(conv.id));
+                        conversationsList.appendChild(convDiv);
+                    });
+                }
+            })
+            .catch(console.error);
+    }
+
+    // Create new conversation
+    function createNewConversation() {
+        fetch('/conversations', { method: 'POST' })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    currentConversationId = data.conversation.id;
+                    loadConversations();
+                    chatWindow.innerHTML = '';
+                    showWelcomeMessage();
+                }
+            })
+            .catch(console.error);
+    }
+
+    // Switch conversation
+    function switchConversation(conversationId) {
+        currentConversationId = conversationId;
+        loadConversations();
+        // Load conversation history
+        fetch(`/get-history?conversation_id=${conversationId}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    chatWindow.innerHTML = '';
+                    data.history.forEach(msg => {
+                        addMessage(msg.role, msg.content, msg.timestamp, false, msg.message_id, msg.feedback);
+                    });
+                }
+            })
+            .catch(console.error);
     }
 
     // Start the application

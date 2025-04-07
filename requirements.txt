@@ -1,9 +1,7 @@
-flask
-python-dotenv
-openai
-azure-cognitiveservices-speech
-markdown2
-markdown
-pyodbc
-azure-identity
-flask_sqlalchemy
+Flask==3.1.0
+flask_sqlalchemy==3.1.1
+Markdown==3.4.1
+markdown2==2.4.0
+openai==1.70.0
+pyodbc==4.0.39
+python-dotenv==1.1.0
